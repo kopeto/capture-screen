@@ -194,6 +194,8 @@ int main(int argc, char **argv)
 
         frame->pts = i;
 
+        
+
         /* encode the image */
         encode(c, frame, pkt, f);
     }

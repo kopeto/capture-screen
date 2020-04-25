@@ -91,7 +91,7 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    printf("Codec name: %s\n", pCodec->long_name);
+    printf("Codec fucking name: %s\n", pCodec->long_name);
     
 	//Grab at position 10,20
 	if(avformat_open_input(&pFormatCtx,":1.0",ifmt,&options)!=0){
