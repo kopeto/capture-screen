@@ -55,6 +55,8 @@ int main(int argc, char* argv[])
 	AVCodecContext	*pCodecCtxOut = NULL;
 	AVCodec			*pCodec = NULL;
 	
+	AVCodec* TEST;
+
 	avformat_network_init();
 	pFormatCtx = avformat_alloc_context();
 	

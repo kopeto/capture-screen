@@ -8,8 +8,10 @@ SDL_LIBS = $(shell sdl-config --libs)
 INCLUDES = $(shell sdl-config --cflags)
 
 
-AV_INCLUDES = -I/home/ander/ffmpeg_build/include
-AV_LIBS = -L/home/ander/ffmpeg_build/lib  -lavdevice  -lm  -lswresample  -lavformat -lswscale -lavutil -lavcodec 
+#AV_INCLUDES = -I/home/ander/ffmpeg_build/include
+AV_INCLUDES = $(shell pkg-config --cflgas libavformat)
+#AV_LIBS = -L/home/ander/ffmpeg_build/lib  -lavdevice  -lm  -lswresample  -lavformat -lswscale -lavutil -lavcodec 
+AV_LIBS  = $(shell pkg-config --libs libavformat libavutil libavcodec libavdevice libswscale)
 
 all: $(TARGET)
 
