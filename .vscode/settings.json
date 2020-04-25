@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "avdevice.h": "c",
+        "samplefmt.h": "c",
+        "sdl.h": "c",
+        "swscale.h": "c"
+    }
+}
