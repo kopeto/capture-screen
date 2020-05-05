@@ -9,13 +9,13 @@
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
 
-	static AVFormatContext	*pFormatCtx = NULL;
-	static AVFormatContext	*pFormatCtxOut = NULL;
+#include <SDL2/SDL.h>
 
+
+	static AVFormatContext	*pFormatCtx = NULL;
 	static AVInputFormat 	*ifmt = NULL;
 
-    static AVStream        	*pStream = NULL;
-	static AVStream			*pStreamOut = NULL;
+    static AVStream        *pStream = NULL;
 
 	static AVCodecContext	*pCodecCtx = NULL;
 	static AVCodecContext	*pCodecCtxOut = NULL;
@@ -25,20 +25,26 @@
 
 	static AVPacket 		*packet = NULL;
 	static AVFrame			*pFrame = NULL;
-	static AVFrame 			*pFrameYUV = NULL;
+	static AVFrame 		*pFrameYUV = NULL;
 
-	static AVDictionary		*dec_options = NULL;
-	static AVDictionary		*enc_options = NULL;
+	static AVDictionary* dec_options = NULL;
+	static AVDictionary* enc_options = NULL;
 
 	static FILE 			*fp_yuv = NULL; 
 	static const char 		*out_filename = "out.mp4";
 	static const char		*screen_dimensions = "2520x1440";
 	static const char		*target_dimensions = "1280x720";
-	static const int		target_width = 1280;
-	static const int		target_height = 720;
+	static const int		target_width = 1920;
+	static const int		target_height = 1080;
 
 	static struct SwsContext *img_convert_ctx = NULL;
 
+	static SDL_Window		*window = NULL;
+	static SDL_Renderer	*renderer = NULL;
+	static SDL_Texture		*texture = NULL;
+
+	static SDL_Event event;
+	
 	static int done = 0;
 	static int pts = 0;
 
@@ -47,18 +53,12 @@
 	static unsigned char *out_buffer = NULL;
 
 
-
+	
 
 static void encode(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt,
                    FILE *outfile)
 {
     int ret;
-
-	/* prepare packet for muxing */
-    // pkt->stream_index = pStream->index;
-    // av_packet_rescale_ts(pkt,
-    //                      pStreamOut->time_base,
-    //                      pStreamOut->time_base);
 
     /* send the frame to the encoder */
     if (frame)
@@ -80,120 +80,14 @@ static void encode(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt,
         }
 
         printf("Write packet %3"PRId64" (size=%5d)\n", pkt->pts, pkt->size);
-		    /* prepare packet for muxing */
-		// pkt->stream_index = pStream->index;
-		// av_packet_rescale_ts(pkt,
-		// 					pStream->time_base,
-		// 					pStreamOut->time_base);
-
-		/* mux encoded frame */
-		ret = av_write_frame(pFormatCtxOut, pkt);
-			
+        fwrite(pkt->data, 1, pkt->size, outfile);
         av_packet_unref(pkt);
-
-		return;
     }
-}
-
-static int open_output_file(const char *filename)
-{
-    int ret;
-    unsigned int i;
-
-	// --------------------------------------
-	// SETUP ENCODER
-	// --------------------------------------
-
-
-    avformat_alloc_output_context2(&pFormatCtxOut, NULL, NULL, filename);
-    if (!pFormatCtxOut) {
-        printf("Could not create output context\n");
-        return -1;
-    }
-
-	pStreamOut = avformat_new_stream(pFormatCtxOut, NULL);
-
-	if (!pStreamOut) {
-		printf("Failed allocating output stream\n");
-		return -1;
-	}
-
-	//codec = avcodec_find_encoder (AV_CODEC_ID_H264);
-    pCodecOut = avcodec_find_encoder_by_name ("libx264");
-    if(!pCodecOut)
-    {
-        printf("Codec not found.\n");
-        return -1;
-    }
-    printf("Encoder name: %s\n", pCodecOut->long_name);
-
-	pCodecCtxOut = avcodec_alloc_context3(pCodecOut);
-
-
-    /* put sample parameters */
-    pCodecCtxOut->bit_rate = 600000000;
-    /* resolution must be a multiple of two */
-    pCodecCtxOut->width = target_width;
-    pCodecCtxOut->height = target_height;
-    /* frames per second */
-
-
-    pCodecCtxOut->time_base = pStream->time_base;
-    pCodecCtxOut->framerate = pStream->avg_frame_rate;
-    // pCodecCtxOut->time_base = (AVRational){1, 25};
-    // pCodecCtxOut->framerate = (AVRational){25, 1};
-
-    pCodecCtxOut->gop_size = 10;
-    pCodecCtxOut->max_b_frames = 1;
-    pCodecCtxOut->pix_fmt = AV_PIX_FMT_YUV420P;
-
-    // av_opt_set(pCodecCtxOut->priv_data, "preset", "slow", 0);
-	// av_dict_set(&enc_options,"no-correct-pts",NULL,0);
-	// av_dict_set(&enc_options,"fps","25.00",0);
-
-
-	if (pFormatCtxOut->oformat->flags & AVFMT_GLOBALHEADER)
-		pCodecCtxOut->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-
-	if(avcodec_open2(pCodecCtxOut, pCodecOut, &enc_options)<0)
-	{
-		printf("Could not open encoder.\n");
-		return -1;
-	}
-
-	ret = avcodec_parameters_from_context(pStreamOut->codecpar, pCodecCtxOut);
-	if (ret < 0) {
-		printf( "Failed to copy encoder parameters to output stream\n");
-		return ret;
-	}
-
-	pStreamOut->time_base = pCodecCtxOut->time_base;
-
-    av_dump_format(pFormatCtxOut, 0, filename, 1);
-
-    if (!(pFormatCtxOut->oformat->flags & AVFMT_NOFILE)) {
-        ret = avio_open(&pFormatCtxOut->pb, filename, AVIO_FLAG_WRITE);
-        if (ret < 0) {
-            printf("Could not open output file '%s'", filename);
-            return ret;
-        }
-    }
-
-    /* init muxer, write output file header */
-    ret = avformat_write_header(pFormatCtxOut, NULL);
-	ret = av_write_trailer(pFormatCtxOut);
-
-    if (ret < 0) {
-        printf("Error occurred when opening output file\n");
-        return ret;
-    }
-
-    return 0;
 }
 
 int main(int argc, char* argv[])
 {
-	//avformat_network_init();
+	avformat_network_init();
 	pFormatCtx = avformat_alloc_context();
 	
 	//Register Device
@@ -234,9 +128,9 @@ int main(int argc, char* argv[])
 
 	if(pStream->codecpar)
 	{
-		printf("Frames size %d x %d\n", pStream->codecpar->width, pStream->codecpar->height);
-		printf("Sample aspect ratio %d:%d\n", pStream->codecpar->sample_aspect_ratio.den, pStream->codecpar->sample_aspect_ratio.num);
-		printf("Codec id %d\n", pStream->codecpar->codec_id);
+		printf("Frames size %d x %d\n",pStream->codecpar->width, pStream->codecpar->height);
+		printf("Sample aspect ratio %d:%d\n",pStream->codecpar->sample_aspect_ratio.den, pStream->codecpar->sample_aspect_ratio.num);
+		printf("Codec id %d\n",pStream->codecpar->codec_id);
 	}
 	else
 	{
@@ -258,7 +152,7 @@ int main(int argc, char* argv[])
 	}
 	else
 	{
-		printf("Decoder is %s\n", pCodecIn->long_name);
+		printf("Decoder is %s\n",pCodecIn->long_name);
 	}
 
 	pCodecCtx = avcodec_alloc_context3(pCodecIn);
@@ -273,15 +167,53 @@ int main(int argc, char* argv[])
 		printf("Could not open decoder.\n");
 		return -1;
 	}
-	// --------------------------------------------------------------
-
-
+	
+	// --------------------------------------
 	// SETUP ENCODER
 	// --------------------------------------
-	
-	open_output_file(out_filename);	
 
-	// --------------------------------------
+	//codec = avcodec_find_encoder (AV_CODEC_ID_H264);
+    pCodecOut = avcodec_find_encoder_by_name ("libx264");
+    if(!pCodecOut)
+    {
+        printf("Codec not found.\n");
+        return -1;
+    }
+    printf("Encoder name: %s\n", pCodecOut->long_name);
+
+	pCodecCtxOut = avcodec_alloc_context3(pCodecOut);
+    /* put sample parameters */
+    pCodecCtxOut->bit_rate = 600000000;
+    /* resolution must be a multiple of two */
+    pCodecCtxOut->width = target_width;
+    pCodecCtxOut->height = target_height;
+    /* frames per second */
+
+
+    // pCodecCtxOut->time_base = pStream->time_base;
+    // pCodecCtxOut->framerate = pStream->avg_frame_rate;
+    pCodecCtxOut->time_base = (AVRational){1, 25};
+    pCodecCtxOut->framerate = (AVRational){25, 1};
+
+    pCodecCtxOut->gop_size = 10;
+    pCodecCtxOut->max_b_frames = 1;
+    pCodecCtxOut->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    // SDL
+
+	if(SDL_Init(SDL_INIT_EVERYTHING)) {  
+		printf( "Could not initialize SDL - %s\n", SDL_GetError()); 
+		return -1;
+	}else{
+        printf("SDL initiated\n");
+    }
+
+	window = SDL_CreateWindow("Window",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED, pCodecCtxOut->width, pCodecCtxOut->height, 0);
+	renderer = SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED);
+	texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12, SDL_TEXTUREACCESS_STREAMING, pCodecCtxOut->width, pCodecCtxOut->height);
+
+	//SDL End
+
 
 
 	packet=av_packet_alloc();
@@ -295,6 +227,10 @@ int main(int argc, char* argv[])
 	pFrameYUV->width = pCodecCtxOut->width;
 	pFrameYUV->height = pCodecCtxOut->height;
 
+	pFrameYUV->crop_bottom;
+
+	fp_yuv=fopen(out_filename,"wb+");  
+
 	img_convert_ctx = sws_getContext(
 							pCodecCtx->width, 
 							pCodecCtx->height, 
@@ -306,14 +242,38 @@ int main(int argc, char* argv[])
 							NULL, NULL, NULL); 
 	
 	//Event Loop
-	int number_packets = 0;
-	while(!done && number_packets <200) {
+	while(!done) {
 		//Wait
+		while(SDL_PollEvent(&event))
+		{
+			switch(event.type)
+			{
+				case SDL_QUIT:
+				{
+					done = 1;
+					break;
+				}
+				case SDL_KEYDOWN:
+				{
+					switch(event.key.keysym.sym)
+					{
+						case SDLK_q:
+						case SDLK_ESCAPE:
+						{
+							done = 1;
+							break;
+						}
+					}
+				}
+				default:
+					break;
+			}
+		} // POLL EVENTS
+
+		//------------------------------
 		if(av_read_frame(pFormatCtx, packet)>=0){
-
+			//SDL_Delay(40);
 			if(packet->stream_index==pStream->index){
-
-				number_packets++;
 
 				if(avcodec_send_packet(pCodecCtx, packet) != 0)
 				{
@@ -321,25 +281,40 @@ int main(int argc, char* argv[])
 				}
 				avcodec_receive_frame(pCodecCtx, pFrame);
 
+				// Frame info: 
+				// linesize[0] = 10080 
+				// 2520 x 4
 				sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);
+				// printf("\tScaled frame: %dx%d\n",pFrameYUV->width, pFrameYUV->height);
+				// for(int i=0; i<AV_NUM_DATA_POINTERS; ++i)
+				// {
+				// 	printf("\tScaled frame Data linesize[%d] %d\n",i,pFrameYUV->linesize[i]);
+				// }
 
-				pFrameYUV->pts = pts++;
-				/* encode the image */
-				encode(pCodecCtxOut, pFrameYUV, packet, fp_yuv);
+				if(SDL_UpdateYUVTexture(	texture,
+										NULL,
+										pFrameYUV->data[0],
+										pFrameYUV->linesize[0],
+										pFrameYUV->data[1],
+										pFrameYUV->linesize[1],
+										pFrameYUV->data[2],
+										pFrameYUV->linesize[2]
+										) < 0)
+				{
+					printf("Can't create YUV texture\n");
+					printf("ERROR: %s\n",SDL_GetError());
+				}
+				SDL_RenderCopy(renderer, texture, NULL, NULL);
+  				SDL_RenderPresent(renderer);
 
 			}
 
 		}else{
 			done = 1;
 		}	
-
 	} // WHILE
 
-    /* flush the encoder */
-	encode(pCodecCtxOut, NULL, packet, fp_yuv);
 
-	av_write_trailer(pFormatCtxOut);
-	
 	printf("Free resources...\n");
 
 	av_packet_free(&packet);
@@ -348,6 +323,13 @@ int main(int argc, char* argv[])
 
 	if(img_convert_ctx)
 		sws_freeContext(img_convert_ctx);
+	if(renderer)
+		SDL_DestroyRenderer(renderer);
+	if(window)
+		SDL_DestroyWindow(window);
+	if(texture)
+		SDL_DestroyTexture(texture);
+	SDL_Quit();
 
 	if(fp_yuv)
 		fclose( fp_yuv );

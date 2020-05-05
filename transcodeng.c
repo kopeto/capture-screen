@@ -44,6 +44,10 @@ typedef struct FilteringContext {
 } FilteringContext;
 static FilteringContext *filter_ctx;
 
+static AVDictionary		*dec_options = NULL;
+
+static const char* screen_dimensions = "2520x1440";
+
 typedef struct StreamContext {
     AVCodecContext *dec_ctx;
     AVCodecContext *enc_ctx;
@@ -55,8 +59,15 @@ static int open_input_file(const char *filename)
     int ret;
     unsigned int i;
 
+    AVInputFormat 	*ifmt = NULL;
+
+    ifmt=av_find_input_format("x11grab");
+
+	//Video frame size. The default is to capture the full screen
+	av_dict_set(&dec_options,"video_size",screen_dimensions,0);
+
     ifmt_ctx = NULL;
-    if ((ret = avformat_open_input(&ifmt_ctx, filename, NULL, NULL)) < 0) {
+    if ((ret = avformat_open_input(&ifmt_ctx, filename, ifmt, &dec_options)) < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot open input file\n");
         return ret;
     }
@@ -138,7 +149,7 @@ static int open_output_file(const char *filename)
         if (dec_ctx->codec_type == AVMEDIA_TYPE_VIDEO
                 || dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
             /* in this example, we choose transcoding to same codec */
-            encoder = avcodec_find_encoder(dec_ctx->codec_id);
+            encoder = avcodec_find_encoder(AV_CODEC_ID_H265);
             if (!encoder) {
                 av_log(NULL, AV_LOG_FATAL, "Necessary encoder not found\n");
                 return AVERROR_INVALIDDATA;
@@ -434,7 +445,7 @@ static int encode_write_frame(AVFrame *filt_frame, unsigned int stream_index, in
 
     av_log(NULL, AV_LOG_DEBUG, "Muxing frame\n");
     /* mux encoded frame */
-    ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
+    ret = av_write_frame(ofmt_ctx, &enc_pkt);
     return ret;
 }
 
@@ -513,14 +524,17 @@ int main(int argc, char **argv)
     int got_frame;
     int (*dec_func)(AVCodecContext *, AVFrame *, int *, const AVPacket *);
 
-    if (argc != 3) {
-        av_log(NULL, AV_LOG_ERROR, "Usage: %s <input file> <output file>\n", argv[0]);
+    //Register Device
+	avdevice_register_all();
+
+    if (argc != 2) {
+        av_log(NULL, AV_LOG_ERROR, "Usage: %s <output file>\n", argv[0]);
         return 1;
     }
 
-    if ((ret = open_input_file(argv[1])) < 0)
+    if ((ret = open_input_file(":0.0")) < 0)
         goto end;
-    if ((ret = open_output_file(argv[2])) < 0)
+    if ((ret = open_output_file(argv[1])) < 0)
         goto end;
     if ((ret = init_filters()) < 0)
         goto end;
@@ -569,7 +583,7 @@ int main(int argc, char **argv)
                                  ifmt_ctx->streams[stream_index]->time_base,
                                  ofmt_ctx->streams[stream_index]->time_base);
 
-            ret = av_interleaved_write_frame(ofmt_ctx, &packet);
+            ret = av_write_frame(ofmt_ctx, &packet);
             if (ret < 0)
                 goto end;
         }
