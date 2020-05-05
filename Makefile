@@ -21,5 +21,5 @@ screen-cast: screen_cast.c
 
 
 clean:
-	rm -f $(TARGET) trans
+	rm -f $(TARGET) trans screen-cast
 	rm -f *.o
